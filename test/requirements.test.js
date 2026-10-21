@@ -5,6 +5,7 @@ import { splitProtectedAndRounds, toAnthropicMessages, truncateOldToolResults, v
 import { attachmentFromBody, extractMediaIds, imageResourceIds, textWithoutImages } from "../src/media.js";
 import { creationText, findByTopicId, idsFromSend, rememberTopic, topicFor, topicIdFromCreate } from "../src/topics.js";
 import { findEmotionId, sentMessageRef } from "../src/stamp.js";
+import { orgUserName, pickRealName, userIdFromLookup } from "../src/names.js";
 import { isRetryable } from "../src/dws.js";
 import { toolKey } from "../src/tools.js";
 
@@ -98,6 +99,19 @@ test("发送回执能取出消息和会话 ID", () => {
   assert.equal(ref.messageId, "msgABC==");
   assert.equal(ref.conversationId, "cidXYZ==");
   assert.equal(findEmotionId({ result: { emotionId: "emo-1" } }), "emo-1");
+});
+
+test("搜索结果用姓名不用昵称", () => {
+  const name = pickRealName({
+    result: [{ name: "吴权轩", nick: "火花兄弟", openDingTalkId: "oid-1" }],
+  }, "oid-1");
+  assert.equal(name, "吴权轩");
+});
+
+test("通讯录详情取姓名而不是展示名", () => {
+  const payload = { result: { orgEmployeeModel: { orgUserId: "u1", orgUserName: "李昌志" } } };
+  assert.equal(userIdFromLookup({ result: { userId: "u1" } }), "u1");
+  assert.equal(orgUserName(payload), "李昌志");
 });
 
 test("证书和网络错误会重试，明确不可重试的不重试", () => {

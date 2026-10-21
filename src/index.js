@@ -6,6 +6,7 @@ import { loadConfig } from "./config.js";
 import { runDws, startEventStream } from "./dws.js";
 import { MagicChat, startStatus } from "./magicchat.js";
 import { attachmentFromBody, downloadImageUrl, extractMediaIds, imageResourceIds, isImageContent, textWithoutImages, urlsFromReadUrls } from "./media.js";
+import { realName } from "./names.js";
 import { classify, conversationTitle, formatTopicPush, formatTopicSender, messageBody, mutedForConversation, pushIndexLine } from "./push.js";
 import { appendVisible, rememberPush } from "./session.js";
 import { stampSentMessage } from "./stamp.js";
@@ -139,17 +140,23 @@ async function handleDingTalk(event) {
   if (config.push.muted_conversations !== true && reason !== "dm" && await isMuted(event.conversation_id)) return;
   seen[id] = Date.now();
   await saveJson(seenPath, seen);
-  const name = await dingTalkTitle(event, reason);
-  const images = await imageUrls(event);
+  const senderName = await realName(
+    event.sender_open_dingtalk_id,
+    cleanName(event.sender),
+    reason === "dm" ? "" : event.conversation_id,
+  );
+  const namedEvent = { ...event, sender: senderName };
+  const name = await dingTalkTitle(namedEvent, reason);
+  const images = await imageUrls(namedEvent);
   if (images.length) {
-    const extra = textWithoutImages(messageBody(event));
-    const topicCaption = reason === "dm" ? "" : formatTopicSender(event);
-    if (extra) await deliverToTopic(event, reason, name, reason === "dm" ? extra : `${topicCaption}${extra}`);
-    for (const url of images) await deliverImageToTopic(event, reason, name, url, extra ? "" : topicCaption);
+    const extra = textWithoutImages(messageBody(namedEvent));
+    const topicCaption = reason === "dm" ? "" : formatTopicSender(namedEvent);
+    if (extra) await deliverToTopic(namedEvent, reason, name, reason === "dm" ? extra : `${topicCaption}${extra}`);
+    for (const url of images) await deliverImageToTopic(namedEvent, reason, name, url, extra ? "" : topicCaption);
   } else {
-    await deliverToTopic(event, reason, name, formatTopicPush(event, reason));
+    await deliverToTopic(namedEvent, reason, name, formatTopicPush(namedEvent, reason));
   }
-  pushes = rememberPush(pushes, pushIndexLine(event, reason, name));
+  pushes = rememberPush(pushes, pushIndexLine(namedEvent, reason, name));
   await saveJson(pushPath, pushes);
 }
 
