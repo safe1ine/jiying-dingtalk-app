@@ -6,7 +6,7 @@ import { loadConfig } from "./config.js";
 import { runDws, startEventStream } from "./dws.js";
 import { MagicChat, startStatus } from "./magicchat.js";
 import { attachmentFromBody, downloadImageUrl, extractMediaIds, imageResourceIds, isImageContent, textWithoutImages, urlsFromReadUrls } from "./media.js";
-import { realName } from "./names.js";
+import { personByName, realName } from "./names.js";
 import { classify, conversationTitle, formatTopicPush, formatTopicSender, messageBody, mutedForConversation, pushIndexLine } from "./push.js";
 import { appendVisible, rememberPush } from "./session.js";
 import { stampSentMessage } from "./stamp.js";
@@ -140,13 +140,16 @@ async function handleDingTalk(event) {
   if (config.push.muted_conversations !== true && reason !== "dm" && await isMuted(event.conversation_id)) return;
   seen[id] = Date.now();
   await saveJson(seenPath, seen);
-  const senderName = await realName(
-    event.sender_open_dingtalk_id,
-    cleanName(event.sender),
-    reason === "dm" ? "" : event.conversation_id,
-  );
-  const namedEvent = { ...event, sender: senderName };
-  const name = await dingTalkTitle(namedEvent, reason);
+  const peer = reason === "dm" ? await dmPeer(event.conversation_id) : null;
+  const senderName = reason === "dm"
+    ? peer.name
+    : await realName(event.sender_open_dingtalk_id, cleanName(event.sender), event.conversation_id);
+  const namedEvent = {
+    ...event,
+    sender: senderName,
+    sender_open_dingtalk_id: reason === "dm" && peer.openId ? peer.openId : event.sender_open_dingtalk_id,
+  };
+  const name = reason === "dm" ? peer.name : await dingTalkTitle(namedEvent, reason);
   const images = await imageUrls(namedEvent);
   if (images.length) {
     const extra = textWithoutImages(messageBody(namedEvent));
@@ -174,6 +177,20 @@ async function isMuted(conversationId) {
     console.error("查询免打扰失败，群消息不推送：", error.message);
     return true;
   }
+}
+
+const dmPeerCache = new Map();
+
+async function dmPeer(conversationId) {
+  if (dmPeerCache.has(conversationId)) return dmPeerCache.get(conversationId);
+  const title = cleanName(await conversationName(conversationId));
+  const person = title ? await personByName(title) : { name: "", openId: "" };
+  const peer = {
+    name: person.name || title || "私聊",
+    openId: person.openId || "",
+  };
+  dmPeerCache.set(conversationId, peer);
+  return peer;
 }
 
 async function dingTalkTitle(event, reason) {

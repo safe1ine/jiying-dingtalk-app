@@ -2,6 +2,16 @@ import { runDws } from "./dws.js";
 
 const cache = new Map();
 
+export function selectPeer(results, query) {
+  const list = Array.isArray(results) ? results : results?.result || [];
+  const hit = list.find((item) => item?.nick === query || item?.name === query) || list[0];
+  if (!hit) return { name: "", openId: "" };
+  return {
+    name: String(hit.name || "").trim(),
+    openId: hit.openDingTalkId || "",
+  };
+}
+
 export function pickRealName(results, openDingTalkId) {
   const list = Array.isArray(results) ? results : results?.result || [];
   const matched = list.find((item) => item?.openDingTalkId === openDingTalkId) || list[0];
@@ -18,6 +28,21 @@ export function userIdFromLookup(payload) {
 
 export function employeeName(member) {
   return String(member?.memberEmpName || member?.name || "").trim();
+}
+
+export async function personByName(query) {
+  const text = String(query || "").trim();
+  if (!text) return { name: "", openId: "" };
+  if (cache.has(`query:${text}`)) return cache.get(`query:${text}`);
+  try {
+    const searched = await runDws(["contact", "user", "search", "--query", text]);
+    const peer = selectPeer(searched.data, text);
+    cache.set(`query:${text}`, peer);
+    return peer;
+  } catch (error) {
+    console.error("按会话标题查对方失败：", error.message);
+    return { name: text, openId: "" };
+  }
 }
 
 export async function realName(openDingTalkId, fallback = "", conversationId = "") {

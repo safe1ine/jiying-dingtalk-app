@@ -5,7 +5,7 @@ import { splitProtectedAndRounds, toAnthropicMessages, truncateOldToolResults, v
 import { attachmentFromBody, extractMediaIds, imageResourceIds, textWithoutImages } from "../src/media.js";
 import { creationText, findByTopicId, idsFromSend, rememberTopic, topicFor, topicIdFromCreate } from "../src/topics.js";
 import { findEmotionId, sentMessageRef } from "../src/stamp.js";
-import { orgUserName, pickRealName, userIdFromLookup } from "../src/names.js";
+import { orgUserName, pickRealName, selectPeer, userIdFromLookup } from "../src/names.js";
 import { isRetryable } from "../src/dws.js";
 import { toolKey } from "../src/tools.js";
 
@@ -99,6 +99,14 @@ test("发送回执能取出消息和会话 ID", () => {
   assert.equal(ref.messageId, "msgABC==");
   assert.equal(ref.conversationId, "cidXYZ==");
   assert.equal(findEmotionId({ result: { emotionId: "emo-1" } }), "emo-1");
+});
+
+test("单聊对方按会话标题取姓名，不取发送人", () => {
+  const peer = selectPeer({
+    result: [{ name: "吴权轩", nick: "火花兄弟", openDingTalkId: "peer-1" }],
+  }, "火花兄弟");
+  assert.equal(peer.name, "吴权轩");
+  assert.equal(peer.openId, "peer-1");
 });
 
 test("搜索结果用姓名不用昵称", () => {
