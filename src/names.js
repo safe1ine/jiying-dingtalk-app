@@ -1,6 +1,29 @@
 import { runDws } from "./dws.js";
 
 const cache = new Map();
+let selfProfile;
+
+export async function currentUser() {
+  if (selfProfile) return selfProfile;
+  const profile = await runDws(["contact", "user", "get-self"]);
+  const name = orgUserName(profile.data);
+  const userId = userIdFromLookup(profile.data);
+  let openId = firstString(profile.data, ["openDingTalkId", "openDingtalkId"]);
+  let nick = "";
+  if (name) {
+    try {
+      const searched = await runDws(["contact", "user", "search", "--query", name]);
+      const list = searched.data?.result || [];
+      const hit = list.find((item) => item.userId === userId) || list.find((item) => item.name === name);
+      openId = openId || hit?.openDingTalkId || "";
+      nick = hit?.nick || "";
+    } catch (error) {
+      console.error("查询本人身份失败：", error.message);
+    }
+  }
+  selfProfile = { name, userId, openId, nick };
+  return selfProfile;
+}
 
 export function selectPeer(results, query) {
   const list = Array.isArray(results) ? results : results?.result || [];
@@ -24,6 +47,17 @@ export function orgUserName(payload) {
 
 export function userIdFromLookup(payload) {
   return firstString(payload, ["userId", "orgUserId"]);
+}
+
+export function sentBySelf(event, self) {
+  if (!self) return false;
+  const senderId = event?.sender_open_dingtalk_id || "";
+  const senderName = String(event?.sender || "").trim();
+  if (self.openId && senderId && senderId === self.openId) return true;
+  if (self.userId && senderId && senderId === self.userId) return true;
+  if (self.name && senderName && senderName === self.name) return true;
+  if (self.nick && senderName && senderName === self.nick) return true;
+  return false;
 }
 
 export function employeeName(member) {

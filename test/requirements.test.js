@@ -5,7 +5,7 @@ import { splitProtectedAndRounds, toAnthropicMessages, truncateOldToolResults, v
 import { attachmentFromBody, extractMediaIds, imageResourceIds, textWithoutImages } from "../src/media.js";
 import { creationText, findByTopicId, idsFromSend, rememberTopic, topicFor, topicIdFromCreate } from "../src/topics.js";
 import { findEmotionId, sentMessageRef } from "../src/stamp.js";
-import { orgUserName, pickRealName, selectPeer, userIdFromLookup } from "../src/names.js";
+import { orgUserName, pickRealName, selectPeer, sentBySelf, userIdFromLookup } from "../src/names.js";
 import { isRetryable } from "../src/dws.js";
 import { toolKey } from "../src/tools.js";
 
@@ -99,6 +99,14 @@ test("发送回执能取出消息和会话 ID", () => {
   assert.equal(ref.messageId, "msgABC==");
   assert.equal(ref.conversationId, "cidXYZ==");
   assert.equal(findEmotionId({ result: { emotionId: "emo-1" } }), "emo-1");
+});
+
+test("自己发送的消息不推送", () => {
+  const self = { name: "李昌志", userId: "changzhi.li", openId: "self-oid" };
+  assert.equal(sentBySelf({ sender: "火花兄弟", sender_open_dingtalk_id: "self-oid" }, self), true);
+  assert.equal(sentBySelf({ sender: "李昌志", sender_open_dingtalk_id: "other" }, self), true);
+  assert.equal(sentBySelf({ sender: "毛思特", sender_open_dingtalk_id: "peer" }, { ...self, nick: "毛思特" }), true);
+  assert.equal(sentBySelf({ sender: "吴权轩", sender_open_dingtalk_id: "peer" }, self), false);
 });
 
 test("单聊对方按会话标题取姓名，不取发送人", () => {

@@ -6,7 +6,7 @@ import { loadConfig } from "./config.js";
 import { runDws, startEventStream } from "./dws.js";
 import { MagicChat, startStatus } from "./magicchat.js";
 import { attachmentFromBody, downloadImageUrl, extractMediaIds, imageResourceIds, isImageContent, textWithoutImages, urlsFromReadUrls } from "./media.js";
-import { personByName, realName } from "./names.js";
+import { currentUser, personByName, realName, sentBySelf } from "./names.js";
 import { classify, conversationTitle, formatTopicPush, formatTopicSender, messageBody, mutedForConversation, pushIndexLine } from "./push.js";
 import { appendVisible, rememberPush } from "./session.js";
 import { stampSentMessage } from "./stamp.js";
@@ -138,6 +138,7 @@ async function handleDingTalk(event) {
   const id = event.message_id || event.event_id;
   if (!id || seen[id]) return;
   if (config.push.muted_conversations !== true && reason !== "dm" && await isMuted(event.conversation_id)) return;
+  if (sentBySelf(event, await currentUser().catch(() => null))) return;
   seen[id] = Date.now();
   await saveJson(seenPath, seen);
   const peer = reason === "dm" ? await dmPeer(event.conversation_id) : null;
