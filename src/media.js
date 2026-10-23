@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { runDws } from "./dws.js";
 
 const NOTICE = "注意：如需下载使用dws chat message download-media命令下载";
+const FILE_NOTICE = "注意：如需下载使用dws drive download命令下载";
 
 export function attachmentFromBody(body) {
   if (!body || !["image", "file"].includes(body.type)) return null;
@@ -23,6 +24,7 @@ export function attachmentFromBody(body) {
     fileIds: [...new Set(fileIds)],
     directUrl,
     caption: String(body.caption || "").trim(),
+    name: String(body.name || body.file_name || body.filename || "").trim(),
   };
 }
 
@@ -38,6 +40,34 @@ export function extractMediaIds(text) {
   let match;
   while ((match = re.exec(String(text || "")))) ids.push(decodeURIComponent(match[1]));
   return [...new Set(ids)];
+}
+
+export function fileRefs(text) {
+  const refs = [];
+  const re = /\[文件\]\s*(.+?)\s+fileId:\s*([A-Za-z0-9_-]+)/g;
+  let match;
+  while ((match = re.exec(String(text || "")))) {
+    refs.push({ name: match[1].trim(), fileId: match[2] });
+  }
+  return refs;
+}
+
+export function textWithoutFiles(text) {
+  return String(text || "")
+    .replace(/\[文件\]\s*.+?\s+fileId:\s*[A-Za-z0-9_-]+/g, "")
+    .replace(FILE_NOTICE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function fileDownloadInfo(payload) {
+  const root = payload?.result || payload || {};
+  const headers = root.headers && typeof root.headers === "object" ? root.headers : {};
+  return {
+    url: root.downloadUrl || findDownloadUrl(payload),
+    name: root.fileName || "",
+    headers,
+  };
 }
 
 export function isImageContent(text) {

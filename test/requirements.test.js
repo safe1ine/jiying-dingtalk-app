@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { classify, conversationTitle, formatMainPush, formatTopicPush, isAtAll, mutedForConversation, pushIndexLine } from "../src/push.js";
 import { splitProtectedAndRounds, toAnthropicMessages, truncateOldToolResults, visibleHistory } from "../src/session.js";
-import { attachmentFromBody, extractMediaIds, imageResourceIds, textWithoutImages } from "../src/media.js";
+import { attachmentFromBody, extractMediaIds, fileDownloadInfo, fileRefs, imageResourceIds, textWithoutFiles, textWithoutImages } from "../src/media.js";
 import { creationText, findByTopicId, idsFromSend, rememberTopic, topicFor, topicIdFromCreate } from "../src/topics.js";
 import { findEmotionId, sentMessageRef } from "../src/stamp.js";
 import { orgUserName, pickRealName, selectPeer, sentBySelf, userIdFromLookup } from "../src/names.js";
@@ -52,6 +52,13 @@ test("话题图片消息能取出文件 ID", () => {
   assert.deepEqual(attachment.fileIds, ["file-1"]);
   assert.equal(attachment.caption, "看图");
   assert.equal(attachmentFromBody({ type: "text", content: "你好" }), null);
+});
+
+test("文件消息能取出文件名和 fileId", () => {
+  const text = "[文件] 招标机构-百智办公阶段成果汇报.html fileId: NDoBb60VLQ05MaOkcnOZvkMlJlemrZQ3 注意：如需下载使用dws drive download命令下载";
+  assert.deepEqual(fileRefs(text), [{ name: "招标机构-百智办公阶段成果汇报.html", fileId: "NDoBb60VLQ05MaOkcnOZvkMlJlemrZQ3" }]);
+  assert.equal(textWithoutFiles(text), "");
+  assert.equal(fileDownloadInfo({ result: { downloadUrl: "https://example.com/a", fileName: "a.html", headers: {} } }).url, "https://example.com/a");
 });
 
 test("从图片消息里取出 mediaId", () => {

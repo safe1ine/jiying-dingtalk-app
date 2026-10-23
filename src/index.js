@@ -5,7 +5,7 @@ import { runAgent } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { runDws, startEventStream } from "./dws.js";
 import { MagicChat, startStatus } from "./magicchat.js";
-import { attachmentFromBody, downloadImageUrl, extractMediaIds, imageResourceIds, isImageContent, textWithoutImages, urlsFromReadUrls } from "./media.js";
+import { attachmentFromBody, downloadImageUrl, extractMediaIds, fileDownloadInfo, fileRefs, imageResourceIds, isImageContent, textWithoutFiles, textWithoutImages, urlsFromReadUrls } from "./media.js";
 import { currentUser, personByName, realName, sentBySelf } from "./names.js";
 import { classify, conversationTitle, formatTopicPush, formatTopicSender, messageBody, mutedForConversation, pushIndexLine } from "./push.js";
 import { appendVisible, rememberPush } from "./session.js";
@@ -152,11 +152,18 @@ async function handleDingTalk(event) {
   };
   const name = reason === "dm" ? peer.name : await dingTalkTitle(namedEvent, reason);
   const images = await imageUrls(namedEvent);
+  const files = fileRefs(messageBody(namedEvent));
   if (images.length) {
     const extra = textWithoutImages(messageBody(namedEvent));
     const topicCaption = reason === "dm" ? "" : formatTopicSender(namedEvent);
     if (extra) await deliverToTopic(namedEvent, reason, name, reason === "dm" ? extra : `${topicCaption}${extra}`);
     for (const url of images) await deliverImageToTopic(namedEvent, reason, name, url, extra ? "" : topicCaption);
+  } else if (files.length) {
+    const extra = textWithoutFiles(messageBody(namedEvent));
+    const topicCaption = reason === "dm" ? "" : formatTopicSender(namedEvent);
+    if (extra) await deliverToTopic(namedEvent, reason, name, reason === "dm" ? extra : `${topicCaption}${extra}`);
+    else if (topicCaption) await deliverToTopic(namedEvent, reason, name, topicCaption);
+    for (const file of files) await deliverDriveFile(namedEvent, reason, name, file);
   } else {
     await deliverToTopic(namedEvent, reason, name, formatTopicPush(namedEvent, reason));
   }
@@ -234,6 +241,36 @@ async function deliverImageToTopic(event, reason, name, url, caption) {
   if (!record?.topicId) record = await withTopicLock(dingTalkId, () => createTopic(dingTalkId, name, event, reason));
   if (!record?.topicId) return;
   await sendImage({ type: "topic", conversation_id: record.topicId }, url, caption);
+}
+
+async function deliverDriveFile(event, reason, name, file) {
+  try {
+    const result = await runDws(["drive", "download", "--node", file.fileId, "--url-only"], { timeoutMs: 60_000 });
+    const info = fileDownloadInfo(result.data);
+    const fileName = info.name || file.name || "附件";
+    if (!info.url) throw new Error("没有返回下载地址");
+    if (Object.keys(info.headers || {}).length) throw new Error("下载地址需要额外签名头，即应无法拉取");
+    await deliverFileToTopic(event, reason, name, { url: info.url, name: fileName });
+  } catch (error) {
+    console.error("转发文件失败：", error.message);
+    await deliverToTopic(event, reason, name, `文件 ${file.name || file.fileId} 转发失败：${error.message}`);
+  }
+}
+
+async function deliverFileToTopic(event, reason, name, file) {
+  const dingTalkId = event.conversation_id;
+  if (!dingTalkId) return;
+  let record = topicFor(topics, dingTalkId);
+  if (!record?.topicId) record = await withTopicLock(dingTalkId, () => createTopic(dingTalkId, name, event, reason));
+  if (!record?.topicId) return;
+  await sendFile({ type: "topic", conversation_id: record.topicId }, file);
+}
+
+async function sendFile(target, file) {
+  await chat.request("message.send", {
+    target,
+    message: { type: "file", name: file.name, url: file.url },
+  });
 }
 
 async function sendImage(target, url, caption) {
@@ -335,7 +372,12 @@ async function relayTopicReply(payload) {
 async function relayAttachment(payload, record, attachment) {
   const urls = [...attachment.directUrl ? [attachment.directUrl] : [], ...await readAttachmentUrls(payload, attachment.fileIds)];
   if (!urls.length) throw new Error("图片消息里没有可下载的文件");
-  const relativePath = await downloadToWorkspace(urls[0], payload.message?.id || "image");
+  const relativePath = await downloadToWorkspace(urls[0], payload.message?.id || attachment.type, attachment.name);
+  if (attachment.type === "file") {
+    if (attachment.caption) await sendDingTalk(record, ["--text", attachment.caption], `${payload.message?.id || record.topicId}-caption`);
+    await sendDingTalk(record, ["--msg-type", "file", "--file", relativePath], payload.message?.id || record.topicId);
+    return;
+  }
   const markdown = attachment.caption
     ? `${attachment.caption}\n\n![图片](${relativePath})`
     : `![图片](${relativePath})`;
@@ -352,12 +394,16 @@ async function readAttachmentUrls(payload, fileIds) {
   return urlsFromReadUrls(result);
 }
 
-async function downloadToWorkspace(url, baseName) {
+async function downloadToWorkspace(url, baseName, fileName = "") {
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`下载即应图片失败 HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`下载即应文件失败 HTTP ${response.status}`);
   const bytes = Buffer.from(await response.arrayBuffer());
   const ext = extensionFrom(response.headers.get("content-type"), url);
-  const relativePath = `data/outbound/${String(baseName).replace(/[^A-Za-z0-9._-]/g, "_")}${ext}`;
+  const safeBase = String(baseName).replace(/[^A-Za-z0-9._-]/g, "_");
+  const safeFile = String(fileName).replace(/[\\/]/g, "_").trim();
+  const relativePath = safeFile
+    ? `data/outbound/${safeBase}-${safeFile}`
+    : `data/outbound/${safeBase}${ext}`;
   await mkdir("data/outbound", { recursive: true });
   await writeFile(relativePath, bytes);
   return relativePath;
